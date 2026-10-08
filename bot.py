@@ -1,44 +1,205 @@
-[30;1m2026-10-08 16:21:47[0m [34;1mINFO [0m [35mdiscord.client[0m logging in using static token
-✅ Конфиг: GUILD_ID=1536493454702546986, PORT=3000, SITE=https://miovidni.online
-* Serving Flask app 'bot'
-* Debug mode: off
-[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
-* Running on all addresses (0.0.0.0)
-* Running on http://127.0.0.1:3000
-* Running on http://172.19.0.235:3000
-[33mPress CTRL+C to quit[0m
-[30;1m2026-10-08 16:21:48[0m [34;1mINFO [0m [35mdiscord.gateway[0m Shard ID None has connected to Gateway (Session ID: 08e051e21b118e2ecd4a25cf76452c77).
-[30;1m2026-10-08 16:25:49[0m [34;1mINFO [0m [35mdiscord.client[0m logging in using static token
-✅ Конфиг: GUILD_ID=1536493454702546986, PORT=3000, SITE=https://miovidni.online
-* Serving Flask app 'bot'
-* Debug mode: off
-[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
-* Running on all addresses (0.0.0.0)
-* Running on http://127.0.0.1:3000
-* Running on http://172.19.0.242:3000
-[33mPress CTRL+C to quit[0m
-[30;1m2026-10-08 16:25:50[0m [34;1mINFO [0m [35mdiscord.gateway[0m Shard ID None has connected to Gateway (Session ID: 1e5c80f83614c6a2d4056ccb4072a4e4).
-[30;1m2026-10-08 16:27:32[0m [34;1mINFO [0m [35mdiscord.client[0m logging in using static token
-✅ Конфиг: GUILD_ID=1536493454702546986, PORT=3000, SITE=https://miovidni.online
-✅ API_SECRET: задан
-🌐 Flask запущен на порту 3000
-* Serving Flask app 'bot'
-* Debug mode: off
-[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
-* Running on all addresses (0.0.0.0)
-* Running on http://127.0.0.1:3000
-* Running on http://172.19.0.242:3000
-[33mPress CTRL+C to quit[0m
-[30;1m2026-10-08 16:27:33[0m [34;1mINFO [0m [35mdiscord.gateway[0m Shard ID None has connected to Gateway (Session ID: b85b6707ece0bc5bf767f91587e7a56b).
-✅ Конфиг: GUILD_ID=1536493454702546986, PORT=3000, SITE=https://miovidni.online
-✅ API_SECRET: задан
-🌐 Flask запущен на порту 3000
-* Serving Flask app 'bot'
-[30;1m2026-10-08 16:30:24[0m [34;1mINFO [0m [35mdiscord.client[0m logging in using static token
-* Debug mode: off
-[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
-* Running on all addresses (0.0.0.0)
-* Running on http://127.0.0.1:3000
-* Running on http://172.19.0.233:3000
-[33mPress CTRL+C to quit[0m
-[30;1m2026-10-08 16:30:25[0m [34;1mINFO [0m [35mdiscord.gateway[0m Shard ID None has connected to Gateway (Session ID: a60dfc33e6484790bf89d34af4fa0998).
+import os
+import threading
+import asyncio
+import traceback
+import requests
+import discord
+from discord.ext import tasks
+from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def log(*args, **kwargs):
+    print(*args, **kwargs, flush=True)
+
+
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+GUILD_ID_STR  = os.getenv('GUILD_ID')
+API_SECRET    = os.getenv('API_SECRET', 'mio_secret_default')
+SITE_URL      = os.getenv('SITE_URL', 'https://miovidni.online')
+PORT          = int(os.getenv('PORT', 3000))
+
+if not DISCORD_TOKEN:
+    raise SystemExit("DISCORD_TOKEN не задан")
+if not GUILD_ID_STR:
+    raise SystemExit("GUILD_ID не задан")
+
+try:
+    GUILD_ID = int(GUILD_ID_STR)
+except ValueError:
+    raise SystemExit(f"GUILD_ID должен быть числом: {GUILD_ID_STR!r}")
+
+log(f"OK Конфиг: GUILD_ID={GUILD_ID}, PORT={PORT}, SITE={SITE_URL}")
+log(f"OK API_SECRET: {'задан' if API_SECRET else 'НЕ ЗАДАН'}")
+log(f"OK discord.py версия: {discord.__version__}")
+
+intents = discord.Intents.default()
+intents.presences = True
+intents.members   = True
+intents.guilds    = True
+
+
+def get_presence_data(member):
+    if not member or not member.status:
+        return {'online': False, 'status': 'offline', 'in_guild': True,
+                'activity': None, 'spotify': None}
+
+    status = str(member.status)
+    data = {'online': status != 'offline', 'status': status, 'in_guild': True,
+            'activity': None, 'spotify': None}
+
+    activity = None
+    spotify  = None
+
+    if member.activities:
+        for act in member.activities:
+            try:
+                if act.type == discord.ActivityType.playing:
+                    image_url = None
+                    if act.assets and act.assets.large_image:
+                        img = act.assets.large_image
+                        if img.startswith('spotify:'):
+                            image_url = f"https://i.scdn.co/image/{img.split(':')[1]}"
+                        elif img.startswith('mp:'):
+                            image_url = f"https://media.discordapp.net/{img[3:]}"
+                        else:
+                            app_id = act.application_id
+                            if app_id:
+                                image_url = f"https://cdn.discordapp.com/app-assets/{app_id}/{img}.png"
+                    activity = {
+                        'type': 'playing', 'name': act.name,
+                        'details': act.details, 'state': act.state,
+                        'image': image_url
+                    }
+                    break
+
+                elif isinstance(act, discord.Spotify):
+                    spotify = {
+                        'song': act.title, 'artist': act.artist,
+                        'album': act.album, 'image': act.album_cover_url
+                    }
+                    activity = {
+                        'type': 'listening', 'name': 'Spotify',
+                        'details': act.title, 'state': act.artist,
+                        'image': act.album_cover_url
+                    }
+
+                elif act.type == discord.ActivityType.watching:
+                    activity = {
+                        'type': 'watching', 'name': act.name,
+                        'details': act.details, 'state': act.state,
+                        'image': None
+                    }
+            except Exception as e:
+                log(f'WARN Ошибка разбора activity: {e}')
+
+    data['activity'] = activity
+    data['spotify']  = spotify
+    return data
+
+
+def send_to_site(payload):
+    try:
+        r = requests.post(
+            f'{SITE_URL}/api/save_presence.php',
+            headers={'X-API-Secret': API_SECRET, 'Content-Type': 'application/json'},
+            json=payload,
+            timeout=15
+        )
+        return r.status_code, r.text[:300]
+    except Exception as e:
+        return 0, str(e)
+
+
+class MioBot(discord.Client):
+    async def setup_hook(self):
+        log('START setup_hook: запускаю цикл отправки')
+        push_presence_to_site.start()
+        log('OK Цикл отправки запущен')
+
+
+bot = MioBot(intents=intents)
+app = Flask(__name__)
+
+
+@tasks.loop(seconds=30)
+async def push_presence_to_site():
+    log('CYCLE Цикл отправки сработал')
+    try:
+        guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            log('WARN Сервер не найден')
+            return
+
+        users = []
+        for member in guild.members:
+            if member.bot:
+                continue
+            data = get_presence_data(member)
+            users.append({'discord_id': str(member.id), **data})
+
+        log(f'INFO Участников (не ботов): {len(users)}')
+
+        if not users:
+            log('WARN Нет участников для отправки')
+            return
+
+        payload = {'users': users, 'secret': API_SECRET}
+
+        loop = asyncio.get_event_loop()
+        code, text = await loop.run_in_executor(None, send_to_site, payload)
+
+        log(f'SEND Отправлено {len(users)} статусов -> HTTP {code}')
+        if code != 200:
+            log(f'WARN Ответ сервера: {text}')
+
+    except Exception as e:
+        log(f'ERROR Ошибка в цикле: {e}')
+        traceback.print_exc()
+
+
+@bot.event
+async def on_ready():
+    log(f'READY on_ready: бот {bot.user} (ID: {bot.user.id})')
+    guild = bot.get_guild(GUILD_ID)
+    if guild:
+        log(f'GUILD Сервер: {guild.name} - {guild.member_count} участников')
+    else:
+        log(f'WARN Бот не в сервере {GUILD_ID}!')
+
+
+@app.route('/')
+def index():
+    return jsonify({
+        'status': 'ok',
+        'botReady': bot.is_ready(),
+        'guild': str(GUILD_ID),
+        'loopRunning': push_presence_to_site.is_running()
+    })
+
+
+@app.route('/test_push')
+def test_push():
+    try:
+        r = requests.post(
+            f'{SITE_URL}/api/save_presence.php',
+            headers={'X-API-Secret': API_SECRET, 'Content-Type': 'application/json'},
+            json={'users': [{'discord_id': '0', 'status': 'test'}], 'secret': API_SECRET},
+            timeout=10
+        )
+        return jsonify({'status_code': r.status_code, 'response': r.text[:300]})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
+def run_flask():
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
+
+
+if __name__ == '__main__':
+    threading.Thread(target=run_flask, daemon=True).start()
+    log(f'FLASK Flask запущен на порту {PORT}')
+    log('BOT Запускаю Discord-бота...')
+    bot.run(DISCORD_TOKEN)

@@ -44,11 +44,22 @@ intents.guilds    = True
 def get_presence_data(member):
     if not member or not member.status:
         return {'online': False, 'status': 'offline', 'in_guild': True,
-                'activity': None, 'spotify': None}
+                'activity': None, 'spotify': None,
+                'username': None, 'avatar': None}
 
     status = str(member.status)
+
+    # Аватарка и ник
+    try:
+        avatar_url = str(member.display_avatar.url) if member.display_avatar else None
+    except Exception:
+        avatar_url = None
+
+    username = member.display_name or member.name or None
+
     data = {'online': status != 'offline', 'status': status, 'in_guild': True,
-            'activity': None, 'spotify': None}
+            'activity': None, 'spotify': None,
+            'username': username, 'avatar': avatar_url}
 
     activity = None
     spotify  = None

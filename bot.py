@@ -101,10 +101,16 @@ def get_presence_data(member):
 
 
 def send_to_site(payload):
+    """Отправка на сайт с правильными заголовками, чтобы Cloudflare не блочил."""
     try:
         r = requests.post(
             f'{SITE_URL}/api/save_presence.php',
-            headers={'X-API-Secret': API_SECRET, 'Content-Type': 'application/json'},
+            headers={
+                'X-API-Secret': API_SECRET,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
             json=payload,
             timeout=15
         )
@@ -185,7 +191,12 @@ def test_push():
     try:
         r = requests.post(
             f'{SITE_URL}/api/save_presence.php',
-            headers={'X-API-Secret': API_SECRET, 'Content-Type': 'application/json'},
+            headers={
+                'X-API-Secret': API_SECRET,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
             json={'users': [{'discord_id': '0', 'status': 'test'}], 'secret': API_SECRET},
             timeout=10
         )
